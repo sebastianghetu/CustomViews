@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="MapPointsView">
+        <attr name="max_points" format="integer" />
+
+        <attr name="static_circle_color" format="color" />
+        <attr name="animated_circle_color" format="color" />
+        <attr name="animated_circle_size_min" format="integer" />
+        <attr name="animated_circle_size_max" format="integer" />
+        <attr name="animated_circle_alpha_initial" format="integer" />
+        <attr name="animated_circle_alpha_expanded" format="integer" />
+        <attr name="animated_circle_animation_duration" format="integer" />
+
+        <attr name="animated_line_color" format="color" />
+        <attr name="animated_line_thickness" format="float" />
+        <attr name="animated_line_animation_duration" format="integer" />
+
+    </declare-styleable>
+</resources>

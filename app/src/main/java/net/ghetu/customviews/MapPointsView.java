@@ -3,6 +3,7 @@ package net.ghetu.customviews;
 import android.animation.AnimatorSet;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -32,15 +33,30 @@ public class MapPointsView extends ImageView {
     /**
      * Points between which the pathways are formed
      */
-    ArrayList<AnimatedPoint> mPoints;
+    private ArrayList<AnimatedPoint> mPoints;
 
     /**
-     * Pathways
+     * Pathways (aka lines) between points
      */
-    ArrayList<AnimatedLine> mLines;
+    private ArrayList<AnimatedLine> mLines;
 
-    boolean mSelectPointsByTouching;
-    int mMaxPoints = 5;
+    private boolean mSelectPointsByTouching = true;
+    private int mMaxPoints = 5;
+
+    // Line options - apply to all
+    private Paint linePaint;
+    private int lineAnimationDuration = 500;
+    private int lineColor = Color.GRAY;
+    private float lineThickness = 3f;
+
+    // Circle options - apply to all (if instantiating from XML or not setting them explicitly)
+    private int staticCircleColor = Color.WHITE;
+    private int animatedCircleColor = Color.WHITE;
+    private int animatedCircleSizeMin = 16;
+    private int animatedCircleSizeMax = 120;
+    private int animatedCircleAlphaInitial = 100;
+    private int animatedCircleAlphaExpanded = 0;
+    private int animatedCircleAnimationDuration = 500;
 
     public MapPointsView(Context context) {
         super(context);
@@ -49,11 +65,13 @@ public class MapPointsView extends ImageView {
 
     public MapPointsView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        pullAttributes(context, attrs);
         init();
     }
 
     public MapPointsView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
+        pullAttributes(context, attrs);
         init();
     }
 
@@ -91,11 +109,40 @@ public class MapPointsView extends ImageView {
     }
 
     /**
+     * Pulls attributes from XML. When XML is used for defining the view, points can only be chosen dynamically by
+     * the user. Furthermore, point colors can not be different from each other.
+     */
+    private void pullAttributes(Context context, AttributeSet attrs) {
+        TypedArray ta = context.obtainStyledAttributes(attrs, R.styleable.MapPointsView);
+
+        // Try to pull out a value from XML. If there is no value there, stick to the one defined already
+        mMaxPoints = ta.getInt(R.styleable.MapPointsView_max_points, mMaxPoints);
+
+        staticCircleColor = ta.getColor(R.styleable.MapPointsView_static_circle_color, staticCircleColor);
+        animatedCircleColor = ta.getColor(R.styleable.MapPointsView_animated_circle_color, animatedCircleColor);
+        animatedCircleSizeMin = ta.getInt(R.styleable.MapPointsView_animated_circle_size_min, animatedCircleSizeMin);
+        animatedCircleSizeMax = ta.getInt(R.styleable.MapPointsView_animated_circle_size_max, animatedCircleSizeMax);
+        animatedCircleAlphaInitial = ta.getInt(R.styleable.MapPointsView_animated_circle_alpha_initial,
+                animatedCircleAlphaInitial);
+        animatedCircleAlphaExpanded = ta.getInt(R.styleable.MapPointsView_animated_circle_alpha_initial,
+                animatedCircleAlphaExpanded);
+        animatedCircleAnimationDuration = ta.getInt(R.styleable.MapPointsView_animated_circle_animation_duration,
+                animatedCircleAnimationDuration);
+
+        lineColor = ta.getColor(R.styleable.MapPointsView_animated_line_color, lineColor);
+        lineThickness = ta.getFloat(R.styleable.MapPointsView_animated_line_thickness, lineThickness);
+        lineAnimationDuration = ta.getInteger(R.styleable.MapPointsView_animated_line_animation_duration,
+                lineAnimationDuration);
+
+        ta.recycle();
+    }
+
+    /**
      * Sets up the members, as well as callbacks for the animations (to determine the precedence of animation between
      * the pathways and points).
      */
     private void init() {
-        // TODO: Implement state staving when view gets destroyed and created again
+        // TODO: Implement state saving when view gets destroyed and created again
         setSaveEnabled(true);
 
         mPoints = new ArrayList<>();
@@ -106,52 +153,57 @@ public class MapPointsView extends ImageView {
                 @Override
                 public boolean onTouch(View view, MotionEvent motionEvent) {
 
+                    if (motionEvent.getAction() == MotionEvent.ACTION_DOWN)
+                        // Propagate the event to ACTION_UP
+                        return true;
+
                     if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
 
-                        final AnimatedPoint newPoint = new AnimatedPoint(motionEvent.getX(), motionEvent.getY());
-                        mPoints.add(newPoint);
-                        newPoint.setCallback(getPointCallback(newPoint));
+                        // Don't allow the input of new points after the maximum defined number is reached
+                        if (mPoints.size() < mMaxPoints) {
+                            final AnimatedPoint newPoint = new AnimatedPoint(motionEvent
+                                    .getX(), motionEvent.getY());
+                            mPoints.add(newPoint);
+                            newPoint.setCallback(getPointCallback(newPoint));
 
-                        if (mPoints.size() >= 2) {
-                            int numberOfPoints = mPoints.size();
+                            if (mPoints.size() >= 2) {
+                                int numberOfPoints = mPoints.size();
 
-                            // Add a new pathway between the last 2 points
-                            final AnimatedLine newLine = new AnimatedLine(mPoints.get(numberOfPoints - 2),
-                                    mPoints.get(numberOfPoints - 1));
-                            mLines.add(newLine);
-                            newLine.setCallback(getLineCallback(newLine));
+                                // Add a new pathway between the last 2 points
+                                final AnimatedLine newLine = new AnimatedLine(mPoints.get(numberOfPoints - 2),
+                                        mPoints.get(numberOfPoints - 1));
+                                mLines.add(newLine);
+                                newLine.setCallback(getLineCallback(newLine));
+                            }
+
+                            if (mPoints.size() == mMaxPoints) {
+                                mPoints.get(0).startAnimation();
+                            }
+
+                            // New points were added, an animation might have been started. Time to redraw the view to
+                            // reflect these changes!
+                            invalidate();
                         }
 
-                        if (mPoints.size() == mMaxPoints) {
-                            mPoints.get(0).startAnimation();
-                        }
-
-                        // New points were added, an animation might have been started. Time to redraw the view to
-                        // reflect these changes!
-                        invalidate();
-
-                        return true;
+                        // Don't propagate the event further
+                        return false;
                     }
 
                     return false;
                 }
             });
-        } else {
-            // If the points have already been selected in a static manner, just describe how the path should be
-            // animated by setting the proper callbacks
-            for (AnimatedPoint p : mPoints) {
-                p.setCallback(getPointCallback(p));
-            }
-
-            for (int i = 0; i < mPoints.size() - 1; i++) {
-                // Add a new pathway between the last 2 points
-                final AnimatedLine newLine = new AnimatedLine(mPoints.get(i),
-                        mPoints.get(i + 1));
-                mLines.add(newLine);
-                newLine.setCallback(getLineCallback(newLine));
-            }
         }
+    }
 
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+
+        // If the the points were not chosen dynamically by the user by touching, animate the path automatically when
+        // the view becomes visible
+        if (visibility == View.VISIBLE && !mSelectPointsByTouching) {
+            startAnimatingLines();
+        }
     }
 
     /**
@@ -176,7 +228,6 @@ public class MapPointsView extends ImageView {
 
             @Override
             public void animationEnded() {
-
             }
         };
     }
@@ -246,10 +297,82 @@ public class MapPointsView extends ImageView {
     */
 
     /**
-     * Start animating the pathway. Should be used when mSelectPointsByTouching is false to start up the animation.
+     * Start animating the pathway. Should be used when getSelectPointsByTouching is false to start up the animation.
      */
     private void startAnimatingLines() {
         mPoints.get(0).startAnimation();
+    }
+
+    public ArrayList<AnimatedPoint> getPoints() {
+        return mPoints;
+    }
+
+    public ArrayList<AnimatedLine> getLines() {
+        return mLines;
+    }
+
+    public boolean getSelectPointsByTouching() {
+        return mSelectPointsByTouching;
+    }
+
+    public int getMaxPoints() {
+        return mMaxPoints;
+    }
+
+    /**
+     * This only works if getSelectPointsByTouching == true. After maxPoints have been chosen by the user, the
+     * animation starts and no other points can be inputted.
+     *
+     * @param mMaxPoints
+     */
+    public void setMaxPoints(int mMaxPoints) {
+        this.mMaxPoints = mMaxPoints;
+    }
+
+    /**
+     * If the parameter of this method is true, the user will have to select the points dynamically by touching the
+     * view. Otherwise, the points must be set via setPoints or via XML.
+     *
+     * @param mSelectPointsByTouching
+     */
+    public void setSelectPointsByTouching(boolean mSelectPointsByTouching) {
+        this.mSelectPointsByTouching = mSelectPointsByTouching;
+    }
+
+    /**
+     * Sets the points from the pathway. The pathway will be animated sequentially between the points of the array.
+     *
+     * @param mPoints
+     */
+    public void setPoints(ArrayList<AnimatedPoint> mPoints) {
+        this.mPoints = mPoints;
+
+
+        // If the points have already been selected in a static manner, just describe how the path should be
+        // animated by setting the proper callbacks
+        for (AnimatedPoint p : mPoints) {
+            p.setCallback(getPointCallback(p));
+        }
+
+        for (int i = 0; i < mPoints.size() - 1; i++) {
+            // Add a new pathway between the last 2 points
+            final AnimatedLine newLine = new AnimatedLine(mPoints.get(i),
+                    mPoints.get(i + 1));
+            mLines.add(newLine);
+            newLine.setCallback(getLineCallback(newLine));
+        }
+    }
+
+    public void setLinePaint(Paint mLinePaint) {
+        this.linePaint = mLinePaint;
+    }
+
+    public void setLineAnimationDuration(int mLineAnimationDuration) {
+        this.lineAnimationDuration = mLineAnimationDuration;
+    }
+
+    public Paint getLinePaint() {
+        return this.linePaint;
     }
 
     /**
@@ -268,7 +391,9 @@ public class MapPointsView extends ImageView {
         void animationEnded();
     }
 
-    // Simple representation of a point
+    /**
+     * Simple representation of a point
+     */
     public class Point {
         float X, Y;
 
@@ -287,26 +412,24 @@ public class MapPointsView extends ImageView {
      * A point on the pathway. The animation consists of a circle around the point that expands and becomes gradually
      * transparent.
      */
-    private class AnimatedPoint extends Point {
+    public class AnimatedPoint extends Point {
         // Alpha and diameter are animated in parallel, so an {@link AnimatorSet} is necessary
         AnimatorSet mAnimatorSet;
         ValueAnimator mAnimatorDiameter;
         ValueAnimator mAnimatorAlpha;
 
-        int mDiameterInitial = 20;
-        int mDiameterExpanded = 140;
-        int mAlphaInitial = 100;
-        int mAlphaExpanded = 0;
-
-        Paint mStaticCirclePaint;
-
+        // AnimatedCircle options
+        private Integer mDiameterInitial = animatedCircleSizeMin;
+        private Integer mDiameterExpanded = animatedCircleSizeMax;
+        private Integer mAlphaInitial = animatedCircleAlphaInitial;
+        private Integer mAlphaExpanded = animatedCircleAlphaExpanded;
+        private Integer mCircleAnimationDuration = animatedCircleAnimationDuration;
+        private Paint mStaticCirclePaint;
         // The alpha value of this member is animated
         Paint mAnimatedCirclePaint;
 
         // This member is animated
         int mCurrentDiameter;
-
-        int mAnimationDuration = 300;
 
         AnimatedObjectCallback mCallback;
 
@@ -318,14 +441,16 @@ public class MapPointsView extends ImageView {
             initDiameterAnimator();
             initAlphaAnimator();
 
-            mAnimatorSet.setDuration(mAnimationDuration);
+            mAnimatorSet.setDuration(mCircleAnimationDuration);
             mAnimatorSet.playTogether(mAnimatorAlpha, mAnimatorDiameter);
 
             mStaticCirclePaint = new Paint();
-            mStaticCirclePaint.setColor(Color.YELLOW);
+            mStaticCirclePaint.setAntiAlias(true);
+            mStaticCirclePaint.setColor(staticCircleColor);
 
             mAnimatedCirclePaint = new Paint();
-            mAnimatedCirclePaint.setColor(Color.WHITE);
+            mAnimatedCirclePaint.setAntiAlias(true);
+            mAnimatedCirclePaint.setColor(animatedCircleColor);
         }
 
         /**
@@ -349,6 +474,9 @@ public class MapPointsView extends ImageView {
             });
         }
 
+        /**
+         * Sets up the way in which the circle that surrounds the point changes its transparency
+         */
         private void initAlphaAnimator() {
             // Animate between these two values
             mAnimatorAlpha = ValueAnimator.ofInt(mAlphaInitial, mAlphaExpanded);
@@ -377,16 +505,64 @@ public class MapPointsView extends ImageView {
             return mStaticCirclePaint;
         }
 
-        public Paint getAnimatedCirclePaint() {
-            return mAnimatedCirclePaint;
-        }
-
         public AnimatorSet getAnimatorSet() {
             return mAnimatorSet;
         }
 
         public void setCallback(AnimatedObjectCallback callback) {
             this.mCallback = callback;
+        }
+
+        public int getCircleAlphaExpanded() {
+            return mAlphaExpanded;
+        }
+
+        public void setCircleAlphaExpanded(int mAlphaExpanded) {
+            this.mAlphaExpanded = mAlphaExpanded;
+        }
+
+        public int getCircleAlphaInitial() {
+            return mAlphaInitial;
+        }
+
+        public void setCircleAlphaInitial(int mAlphaInitial) {
+            this.mAlphaInitial = mAlphaInitial;
+        }
+
+        public int getCircleDiameterExpanded() {
+            return mDiameterExpanded;
+        }
+
+        public void setCircleDiameterExpanded(int mDiameterExpanded) {
+            this.mDiameterExpanded = mDiameterExpanded;
+        }
+
+        public int getCircleDiameterInitial() {
+            return mDiameterInitial;
+        }
+
+        public void setCircleDiameterInitial(int mDiameterInitial) {
+            this.mDiameterInitial = mDiameterInitial;
+        }
+
+        public int getCircleAnimationDuration() {
+            return mCircleAnimationDuration;
+        }
+
+        public void setCircleAnimationDuration(int mCircleAnimationDuration) {
+            this.mCircleAnimationDuration = mCircleAnimationDuration;
+        }
+
+        public void setStaticCirclePaint(Paint mStaticCirclePaint) {
+            this.mStaticCirclePaint = mStaticCirclePaint;
+        }
+
+        public Paint getAnimatedCirclePaint() {
+            return mAnimatedCirclePaint;
+        }
+
+        public void setAnimatedCirclePaint(Paint mAnimatedCirclePaint) {
+            this.mAnimatedCirclePaint = mAnimatedCirclePaint;
         }
     }
 
@@ -408,15 +584,11 @@ public class MapPointsView extends ImageView {
         /**
          * Current point in the animation. This point coincides with the origin at the beginning of the animation. By
          * the end of the animation, it coincides with the destination. If the animation has started, while the view
-         * gets drawn again and again, the line will appear to grow from just one point in the beginning to a full
-         * line from origin to destination in the end
+         * gets drawn again and again, the line will appear to grow from just one point (in the beginning) to a full
+         * line from origin to destination (in the end)
          */
         Point mCurrentPoint;
-
-        ValueAnimator mAnimator;
-        Paint mPaint;
-
-        int mAnimationDuration = 500;
+        private ValueAnimator mAnimator;
 
         AnimatedObjectCallback mCallback;
 
@@ -428,9 +600,10 @@ public class MapPointsView extends ImageView {
 
             initAnimator();
 
-            mPaint = new Paint();
-            mPaint.setStrokeWidth(3f);
-            mPaint.setColor(Color.GRAY);
+            linePaint = new Paint();
+            linePaint.setAntiAlias(true);
+            linePaint.setStrokeWidth(lineThickness);
+            linePaint.setColor(lineColor);
         }
 
         private void initAnimator() {
@@ -450,7 +623,7 @@ public class MapPointsView extends ImageView {
             });
 
             mAnimator.setInterpolator(new LinearInterpolator());
-            mAnimator.setDuration(mAnimationDuration);
+            mAnimator.setDuration(lineAnimationDuration);
         }
 
         /**
@@ -481,7 +654,7 @@ public class MapPointsView extends ImageView {
         }
 
         public Paint getPaint() {
-            return mPaint;
+            return linePaint;
         }
 
         public Point getCurrentPoint() {
@@ -491,5 +664,10 @@ public class MapPointsView extends ImageView {
         public ValueAnimator getAnimator() {
             return mAnimator;
         }
+    }
+
+    private int dipToPx(float dip) {
+        float density = getContext().getResources().getDisplayMetrics().density;
+        return (int) (dip * density + 0.5f * (dip >= 0 ? 1 : -1));
     }
 }
